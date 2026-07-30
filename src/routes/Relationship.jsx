@@ -1,9 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEditorStore } from '../store.js';
 import { useShallow } from "zustand/react/shallow";
-import ValidatedInput from '../components/ui/ValidatedInput.jsx';
-import ArrayInput from '../components/ui/ArrayInput.jsx';
-import AIContextEditor from '../components/ui/AIContextEditor.jsx';
+import RelationshipEditorFields from '../components/ui/RelationshipEditorFields.jsx';
 
 const Relationship = () => {
     const { relationshipId } = useParams();
@@ -28,12 +26,6 @@ const Relationship = () => {
         );
     }
 
-    const datasetNames = datasets.map(d => d?.name).filter(Boolean);
-    const fromDataset = datasets.find(d => d?.name === rel.from);
-    const toDataset = datasets.find(d => d?.name === rel.to);
-    const fromFieldNames = (fromDataset?.fields || []).map(f => f?.name).filter(Boolean);
-    const toFieldNames = (toDataset?.fields || []).map(f => f?.name).filter(Boolean);
-
     const handleRemove = () => {
         const allRels = useEditorStore.getState().getValue('semantic_model[0].relationships') || [];
         const updated = allRels.filter((_, i) => i !== index);
@@ -56,52 +48,11 @@ const Relationship = () => {
                         </h3>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-                        <ValidatedInput
-                            name="rel-name" label="Name" value={rel.name || ''}
-                            onChange={(e) => setValue(`${basePath}.name`, e.target.value)}
-                            required={true} placeholder="relationship_name"
-                        />
-                        <div>{/* spacer */}</div>
-                        <div>
-                            <label className="block text-xs font-medium leading-4 text-gray-900 mb-1">From Dataset</label>
-                            <select
-                                value={rel.from || ''}
-                                onChange={(e) => setValue(`${basePath}.from`, e.target.value)}
-                                className="block w-full rounded-md border-0 py-1.5 pl-2 pr-8 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-xs leading-4 bg-white"
-                            >
-                                <option value="">Select dataset...</option>
-                                {datasetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium leading-4 text-gray-900 mb-1">To Dataset</label>
-                            <select
-                                value={rel.to || ''}
-                                onChange={(e) => setValue(`${basePath}.to`, e.target.value)}
-                                className="block w-full rounded-md border-0 py-1.5 pl-2 pr-8 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-xs leading-4 bg-white"
-                            >
-                                <option value="">Select dataset...</option>
-                                {datasetNames.map(name => <option key={name} value={name}>{name}</option>)}
-                            </select>
-                        </div>
-                        <ArrayInput
-                            label="From Columns" value={rel.from_columns || []}
-                            onChange={(val) => setValue(`${basePath}.from_columns`, val)}
-                            placeholder="Select column..."
-                            options={fromFieldNames}
-                        />
-                        <ArrayInput
-                            label="To Columns" value={rel.to_columns || []}
-                            onChange={(val) => setValue(`${basePath}.to_columns`, val)}
-                            placeholder="Select column..."
-                            options={toFieldNames}
-                        />
-                    </div>
-
-                    <AIContextEditor
-                        label="AI Context" value={rel.ai_context || {}}
-                        onChange={(val) => setValue(`${basePath}.ai_context`, val)}
+                    <RelationshipEditorFields
+                        relationship={rel}
+                        relationshipPath={basePath}
+                        datasets={datasets}
+                        setValue={setValue}
                     />
 
                     <div className="pt-4 border-t border-gray-200">

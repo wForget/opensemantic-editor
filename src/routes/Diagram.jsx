@@ -23,6 +23,7 @@ import {
 } from '../components/diagram/layoutUtils.js';
 import FieldDetailsDrawer from '../components/ui/FieldDetailsDrawer.jsx';
 import MetricDetailsDrawer from '../components/ui/MetricDetailsDrawer.jsx';
+import RelationshipDetailsDrawer from '../components/ui/RelationshipDetailsDrawer.jsx';
 
 const defaultEdgeOptions = {
   style: { strokeWidth: 2, stroke: '#b1b1b7' },
@@ -107,6 +108,7 @@ const DiagramViewInner = () => {
   // Track selected field for drawer
   const [selectedField, setSelectedField] = useState(null);
   const [selectedMetricIndex, setSelectedMetricIndex] = useState(null);
+  const [selectedRelationshipIndex, setSelectedRelationshipIndex] = useState(null);
 
   // Parse data from YAML
   const parsedData = useMemo(() => {
@@ -130,7 +132,15 @@ const DiagramViewInner = () => {
 
   const handleOpenMetric = useCallback((metricIndex) => {
     setSelectedField(null);
+    setSelectedRelationshipIndex(null);
     setSelectedMetricIndex(metricIndex);
+  }, []);
+
+  const handleOpenRelationship = useCallback((relationshipIndex) => {
+    if (!Number.isInteger(relationshipIndex)) return;
+    setSelectedField(null);
+    setSelectedMetricIndex(null);
+    setSelectedRelationshipIndex(relationshipIndex);
   }, []);
 
   // Update YAML with modified semantic model
@@ -239,6 +249,7 @@ const DiagramViewInner = () => {
     if (!field) return;
 
     setSelectedMetricIndex(null);
+    setSelectedRelationshipIndex(null);
     setSelectedField({
       nodeId,
       datasetIndex,
@@ -250,6 +261,7 @@ const DiagramViewInner = () => {
   const handleCloseDrawer = useCallback(() => {
     setSelectedField(null);
     setSelectedMetricIndex(null);
+    setSelectedRelationshipIndex(null);
   }, []);
 
   // Handle keyboard shortcut to delete selected field
@@ -343,57 +355,38 @@ const DiagramViewInner = () => {
 
   // Handle edge deletion — removes column pair from relationship
   const onEdgesDelete = useCallback((edgesToDelete) => {
-    const updatedRelationships = [...relationships];
-    let hasChanges = false;
-
+    const deletionsByRelationship = new Map();
     edgesToDelete.forEach(edge => {
-      const match = edge.id.match(/edge-(\d+)-(\d+)-(\d+)-(\d+)/);
-      if (match) {
-        const sourceDatasetIndex = parseInt(match[1]);
-        const sourceFieldIndex = parseInt(match[2]);
-        const targetDatasetIndex = parseInt(match[3]);
-        const targetFieldIndex = parseInt(match[4]);
-
-        const sourceDataset = datasets[sourceDatasetIndex];
-        const targetDataset = datasets[targetDatasetIndex];
-        const sourceField = sourceDataset?.fields?.[sourceFieldIndex];
-        const targetField = targetDataset?.fields?.[targetFieldIndex];
-
-        if (!sourceDataset || !targetDataset || !sourceField || !targetField) return;
-
-        const relIdx = updatedRelationships.findIndex(
-          r => r.from === sourceDataset.name && r.to === targetDataset.name
-        );
-
-        if (relIdx >= 0) {
-          const rel = { ...updatedRelationships[relIdx] };
-          const fromCols = [...(rel.from_columns || [])];
-          const toCols = [...(rel.to_columns || [])];
-
-          // Find and remove the column pair
-          const pairIdx = fromCols.findIndex((fc, i) => fc === sourceField.name && toCols[i] === targetField.name);
-          if (pairIdx >= 0) {
-            fromCols.splice(pairIdx, 1);
-            toCols.splice(pairIdx, 1);
-
-            if (fromCols.length === 0 && toCols.length === 0) {
-              // Remove the entire relationship
-              updatedRelationships.splice(relIdx, 1);
-            } else {
-              rel.from_columns = fromCols;
-              rel.to_columns = toCols;
-              updatedRelationships[relIdx] = rel;
-            }
-            hasChanges = true;
-          }
-        }
-      }
+      const relationshipIndex = edge.data?.relationshipIndex;
+      if (!Number.isInteger(relationshipIndex)) return;
+      const pairIndexes = deletionsByRelationship.get(relationshipIndex) || new Set();
+      pairIndexes.add(Number.isInteger(edge.data?.columnPairIndex) ? edge.data.columnPairIndex : null);
+      deletionsByRelationship.set(relationshipIndex, pairIndexes);
     });
 
-    if (hasChanges) {
+    if (deletionsByRelationship.size > 0) {
+      const updatedRelationships = relationships.flatMap((relationship, relationshipIndex) => {
+        const pairIndexes = deletionsByRelationship.get(relationshipIndex);
+        if (!pairIndexes) return [relationship];
+        if (pairIndexes.has(null)) return [];
+
+        const fromColumns = [...(relationship.from_columns || [])];
+        const toColumns = [...(relationship.to_columns || [])];
+        [...pairIndexes].sort((a, b) => b - a).forEach(pairIndex => {
+          fromColumns.splice(pairIndex, 1);
+          toColumns.splice(pairIndex, 1);
+        });
+
+        return [{
+          ...relationship,
+          from_columns: fromColumns.length ? fromColumns : undefined,
+          to_columns: toColumns.length ? toColumns : undefined,
+        }];
+      });
       updateModel({ relationships: updatedRelationships });
+      setSelectedRelationshipIndex(null);
     }
-  }, [datasets, relationships, updateModel]);
+  }, [relationships, updateModel]);
 
   // Convert datasets, metrics, and relationships to nodes and edges
   useEffect(() => {
@@ -401,6 +394,7 @@ const DiagramViewInner = () => {
     hasAutoLayouted.current = false;
     setSelectedField(null);
     setSelectedMetricIndex(null);
+    setSelectedRelationshipIndex(null);
     setNodes([]);
   }, [modelName, setNodes]);
 
@@ -470,7 +464,7 @@ const DiagramViewInner = () => {
 
     // Build edges from relationships (field-to-field)
     const fieldEdges = [];
-    relationships.forEach((rel) => {
+    relationships.forEach((rel, relationshipIndex) => {
       const sourceDatasetIndex = datasets.findIndex(d => d?.name === rel.from);
       const targetDatasetIndex = datasets.findIndex(d => d?.name === rel.to);
 
@@ -481,6 +475,8 @@ const DiagramViewInner = () => {
       const fromCols = rel.from_columns || [];
       const toCols = rel.to_columns || [];
       const pairCount = Math.min(fromCols.length, toCols.length);
+      const relationshipLabel = rel.name || `Relationship ${relationshipIndex + 1}`;
+      let validEdgeCount = 0;
 
       if (pairCount > 0) {
         for (let i = 0; i < pairCount; i++) {
@@ -489,7 +485,7 @@ const DiagramViewInner = () => {
 
           if (sourceFieldIndex !== -1 && targetFieldIndex !== -1) {
             fieldEdges.push({
-              id: `edge-${sourceDatasetIndex}-${sourceFieldIndex}-${targetDatasetIndex}-${targetFieldIndex}`,
+              id: `edge-relationship-${relationshipIndex}-pair-${i}`,
               source: `dataset-${sourceDatasetIndex}`,
               sourceHandle: `dataset-${sourceDatasetIndex}-field-${sourceFieldIndex}-source`,
               target: `dataset-${targetDatasetIndex}`,
@@ -500,13 +496,24 @@ const DiagramViewInner = () => {
               focusable: true,
               interactionWidth: 20,
               style: { stroke: '#b1b1b7', strokeWidth: 2 },
+              ariaLabel: `Edit relationship ${relationshipLabel}: ${fromCols[i]} to ${toCols[i]}`,
+              domAttributes: {
+                'data-relationship-index': relationshipIndex,
+              },
+              data: {
+                relationshipIndex,
+                columnPairIndex: i,
+              },
             });
+            validEdgeCount += 1;
           }
         }
-      } else {
-        // Relationship without column pairs — dataset-level edge
+      }
+
+      if (validEdgeCount === 0) {
+        // Keep an editing entry point for dataset-level or invalid column relationships.
         fieldEdges.push({
-          id: `edge-rel-${sourceDatasetIndex}-${targetDatasetIndex}`,
+          id: `edge-relationship-${relationshipIndex}`,
           source: `dataset-${sourceDatasetIndex}`,
           target: `dataset-${targetDatasetIndex}`,
           type: 'default',
@@ -514,6 +521,14 @@ const DiagramViewInner = () => {
           focusable: true,
           interactionWidth: 20,
           style: { stroke: '#b1b1b7', strokeWidth: 2 },
+          ariaLabel: `Edit relationship ${relationshipLabel}: ${rel.from} to ${rel.to}`,
+          domAttributes: {
+            'data-relationship-index': relationshipIndex,
+          },
+          data: {
+            relationshipIndex,
+            columnPairIndex: null,
+          },
         });
       }
     });
@@ -634,6 +649,12 @@ const DiagramViewInner = () => {
   const selectedMetricPath = selectedMetricIndex != null
     ? `semantic_model[0].metrics[${selectedMetricIndex}]`
     : null;
+  const selectedRelationshipData = selectedRelationshipIndex != null
+    ? relationships[selectedRelationshipIndex]
+    : null;
+  const selectedRelationshipPath = selectedRelationshipIndex != null
+    ? `semantic_model[0].relationships[${selectedRelationshipIndex}]`
+    : null;
 
   if (!parsedData) {
     return (
@@ -654,6 +675,17 @@ const DiagramViewInner = () => {
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onEdgesDelete={onEdgesDelete}
+        onEdgeClick={(_event, edge) => handleOpenRelationship(edge.data?.relationshipIndex)}
+        onKeyDownCapture={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          const edgeElement = event.target.closest?.('.react-flow__edge');
+          const relationshipIndexValue = edgeElement?.getAttribute('data-relationship-index');
+          if (relationshipIndexValue === null || relationshipIndexValue === undefined) return;
+          const relationshipIndex = Number(relationshipIndexValue);
+          if (!Number.isInteger(relationshipIndex)) return;
+          event.preventDefault();
+          handleOpenRelationship(relationshipIndex);
+        }}
         onConnect={onConnect}
         isValidConnection={isValidConnection}
         connectionMode="loose"
@@ -679,6 +711,9 @@ const DiagramViewInner = () => {
         deleteKeyCode={['Delete', 'Backspace']}
         multiSelectionKeyCode={null}
         elementsSelectable={true}
+        ariaLabelConfig={{
+          'edge.a11yDescription.default': 'Press Enter or Space to select and edit this relationship. Press Delete or Backspace to remove the selected relationship or column pair.',
+        }}
       >
         <Background />
         <Controls showZoom={false} showFitView={false} showInteractive={false}>
@@ -721,6 +756,7 @@ const DiagramViewInner = () => {
                 <li>Drag nodes to reposition</li>
                 <li>Drag fields to reorder within a dataset</li>
                 <li>Click a metric to edit it in the details drawer</li>
+                <li>Click a relationship line to edit it in the details drawer</li>
                 <li>Use mouse wheel to zoom</li>
               </ul>
             </div>
@@ -778,6 +814,22 @@ const DiagramViewInner = () => {
           const updated = metrics.filter((_, index) => index !== selectedMetricIndex);
           setValue('semantic_model[0].metrics', updated.some(Boolean) ? updated : undefined);
           setSelectedMetricIndex(null);
+        }}
+      />
+
+      <RelationshipDetailsDrawer
+        relationship={selectedRelationshipData}
+        relationshipIndex={selectedRelationshipIndex}
+        relationshipPath={selectedRelationshipPath}
+        datasets={datasets}
+        setValue={setValue}
+        open={selectedRelationshipIndex !== null}
+        onClose={handleCloseDrawer}
+        onDelete={() => {
+          if (selectedRelationshipIndex === null) return;
+          const updated = relationships.filter((_, index) => index !== selectedRelationshipIndex);
+          setValue('semantic_model[0].relationships', updated.some(Boolean) ? updated : undefined);
+          setSelectedRelationshipIndex(null);
         }}
       />
     </div>
