@@ -13,7 +13,7 @@ const estimateTextWidth = (text) => {
 /**
  * Estimate the rendered width of a dataset node based on its content.
  */
-const estimateNodeWidth = (dataset) => {
+export const estimateNodeWidth = (dataset) => {
   const minWidth = 250;
   const padding = 70;
   const typeGap = 16;

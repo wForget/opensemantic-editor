@@ -14,15 +14,47 @@ import '../components/diagram/DiagramStyles.css';
 import { parseYaml, stringifyYaml } from '../utils/yaml.js';
 import { useEditorStore } from '../store.js';
 import DatasetNode from '../components/diagram/DatasetNode.jsx';
+import MetricNode from '../components/diagram/MetricNode.jsx';
 import { useLocation } from 'react-router-dom';
-import { getLayoutedElements, getGridPosition } from '../components/diagram/layoutUtils.js';
+import {
+  estimateNodeWidth,
+  getLayoutedElements,
+  getGridPosition,
+} from '../components/diagram/layoutUtils.js';
 import FieldDetailsDrawer from '../components/ui/FieldDetailsDrawer.jsx';
+import MetricDetailsDrawer from '../components/ui/MetricDetailsDrawer.jsx';
 
 const defaultEdgeOptions = {
   style: { strokeWidth: 2, stroke: '#b1b1b7' },
 };
+const nodeTypes = {
+  datasetNode: DatasetNode,
+  metricNode: MetricNode,
+};
 
 const getStorageKey = (modelName) => `diagram-positions-${modelName}`;
+const CURRENT_METRICS_POSITION_KEY = 'metrics-node';
+const DIAGRAM_POSITIONS_VERSION = 2;
+
+const getNodePositionKey = (node) => {
+  if (node.type === 'metricNode') return CURRENT_METRICS_POSITION_KEY;
+  const datasetName = node.data?.dataset?.name;
+  return datasetName ? `dataset:${datasetName}` : null;
+};
+
+const getSavedDatasetPosition = (savedPositions, datasetName) => {
+  if (savedPositions?.version === DIAGRAM_POSITIONS_VERSION) {
+    return savedPositions.datasets?.[datasetName];
+  }
+
+  // Migrate both the original bare-name format and the briefly used prefixed format.
+  return savedPositions?.[`dataset:${datasetName}`] || savedPositions?.[datasetName];
+};
+
+const getSavedMetricsPosition = (savedPositions) => {
+  if (savedPositions?.version !== DIAGRAM_POSITIONS_VERSION) return null;
+  return savedPositions.metrics;
+};
 
 const getDiagramPositions = (modelName) => {
   if (!modelName) return null;
@@ -36,30 +68,32 @@ const getDiagramPositions = (modelName) => {
 
 const saveDiagramPositions = (modelName, nodes) => {
   if (!modelName) return;
-  const posMap = {};
-  nodes.forEach(n => {
-    const name = n.data?.dataset?.name;
-    if (name) posMap[name] = { x: n.position.x, y: n.position.y };
-  });
-  try {
-    localStorage.setItem(getStorageKey(modelName), JSON.stringify(posMap));
-  } catch { /* ignore quota errors */ }
-};
+  const storedPositions = {
+    version: DIAGRAM_POSITIONS_VERSION,
+    datasets: {},
+    metrics: null,
+  };
 
-const clearDiagramPositions = (modelName) => {
-  if (!modelName) return;
+  nodes.forEach(n => {
+    const position = { x: n.position.x, y: n.position.y };
+    if (n.type === 'metricNode') {
+      storedPositions.metrics = position;
+      return;
+    }
+
+    const datasetName = n.data?.dataset?.name;
+    if (datasetName) storedPositions.datasets[datasetName] = position;
+  });
+
   try {
-    localStorage.removeItem(getStorageKey(modelName));
-  } catch { /* ignore */ }
+    localStorage.setItem(getStorageKey(modelName), JSON.stringify(storedPositions));
+  } catch { /* ignore quota errors */ }
 };
 
 const DiagramViewInner = () => {
   const yaml = useEditorStore((state) => state.yaml);
   const setYaml = useEditorStore((state) => state.setYaml);
 
-  const nodeTypes = useMemo(() => ({
-    datasetNode: DatasetNode,
-  }), []);
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
   const [showHelp, setShowHelp] = useState(false);
@@ -72,6 +106,7 @@ const DiagramViewInner = () => {
 
   // Track selected field for drawer
   const [selectedField, setSelectedField] = useState(null);
+  const [selectedMetricIndex, setSelectedMetricIndex] = useState(null);
 
   // Parse data from YAML
   const parsedData = useMemo(() => {
@@ -85,8 +120,18 @@ const DiagramViewInner = () => {
 
   const semanticModel = parsedData?.semantic_model?.[0];
   const modelName = semanticModel?.name || null;
-  const datasets = semanticModel?.datasets || [];
-  const relationships = semanticModel?.relationships || [];
+  const datasets = useMemo(() => semanticModel?.datasets || [], [semanticModel]);
+  const relationships = useMemo(() => semanticModel?.relationships || [], [semanticModel]);
+  const metrics = useMemo(() => semanticModel?.metrics || [], [semanticModel]);
+  const hasDatasets = datasets.some(Boolean);
+  const metricEntries = useMemo(() => (
+    metrics.flatMap((metric, index) => metric ? [{ metric, index }] : [])
+  ), [metrics]);
+
+  const handleOpenMetric = useCallback((metricIndex) => {
+    setSelectedField(null);
+    setSelectedMetricIndex(metricIndex);
+  }, []);
 
   // Update YAML with modified semantic model
   const updateModel = useCallback((updates) => {
@@ -193,6 +238,7 @@ const DiagramViewInner = () => {
     const field = dataset?.fields?.[fieldIndex];
     if (!field) return;
 
+    setSelectedMetricIndex(null);
     setSelectedField({
       nodeId,
       datasetIndex,
@@ -203,6 +249,7 @@ const DiagramViewInner = () => {
 
   const handleCloseDrawer = useCallback(() => {
     setSelectedField(null);
+    setSelectedMetricIndex(null);
   }, []);
 
   // Handle keyboard shortcut to delete selected field
@@ -348,32 +395,17 @@ const DiagramViewInner = () => {
     }
   }, [datasets, relationships, updateModel]);
 
-  // Auto-layout function
-  const handleAutoLayout = useCallback(async () => {
-    if (!datasets.length || !nodes.length) return;
-
-    clearDiagramPositions(modelName);
-    const layoutedDatasets = await getLayoutedElements(datasets, relationships);
-
-    setNodes(currentNodes => {
-      const updated = currentNodes.map((node, index) => ({
-        ...node,
-        position: layoutedDatasets[index]?.position || node.position,
-      }));
-      saveDiagramPositions(modelName, updated);
-      return updated;
-    });
-
-    if (reactFlowInstance) {
-      setTimeout(() => {
-        reactFlowInstance.fitView({ padding: 0.5, duration: 800 });
-      }, 50);
-    }
-  }, [datasets, relationships, modelName, nodes, setNodes, reactFlowInstance]);
-
-  // Convert datasets and relationships to nodes and edges
+  // Convert datasets, metrics, and relationships to nodes and edges
   useEffect(() => {
-    if (!datasets.length) {
+    hasInitialLayout.current = false;
+    hasAutoLayouted.current = false;
+    setSelectedField(null);
+    setSelectedMetricIndex(null);
+    setNodes([]);
+  }, [modelName, setNodes]);
+
+  useEffect(() => {
+    if (!hasDatasets && !metricEntries.length) {
       setNodes([]);
       setEdges([]);
       hasInitialLayout.current = false;
@@ -386,12 +418,12 @@ const DiagramViewInner = () => {
       : null;
     const needsLayout = !hasInitialLayout.current && !savedPositions;
 
-    const buildNodes = (layoutedDatasets) => datasets
-      .filter(dataset => dataset != null)
-      .map((dataset, index) => {
-        const savedPos = savedPositions?.[dataset?.name];
+    const buildNodes = (layoutedDatasets) => {
+      const datasetNodes = datasets.flatMap((dataset, index) => {
+        if (!dataset) return [];
+        const savedPos = getSavedDatasetPosition(savedPositions, dataset.name);
         const elkPos = layoutedDatasets?.[index]?.position;
-        return {
+        return [{
           id: `dataset-${index}`,
           type: 'datasetNode',
           position: savedPos || elkPos || getGridPosition(index),
@@ -407,8 +439,34 @@ const DiagramViewInner = () => {
               fieldIndex: selectedField.fieldIndex,
             } : null,
           },
-        };
+        }];
       });
+
+      if (!metricEntries.length) return datasetNodes;
+
+      const rightmostDatasetEdge = datasetNodes.reduce(
+        (maxX, node) => Math.max(
+          maxX,
+          node.position.x + estimateNodeWidth(node.data.dataset)
+        ),
+        0
+      );
+      const metricsNode = {
+        id: 'metrics',
+        type: 'metricNode',
+        position: getSavedMetricsPosition(savedPositions) || {
+          x: datasetNodes.length ? rightmostDatasetEdge + 150 : 50,
+          y: 50,
+        },
+        data: {
+          metricEntries,
+          onOpenMetric: handleOpenMetric,
+        },
+        deletable: false,
+      };
+
+      return [...datasetNodes, metricsNode];
+    };
 
     // Build edges from relationships (field-to-field)
     const fieldEdges = [];
@@ -465,9 +523,8 @@ const DiagramViewInner = () => {
       setNodes(currentNodes => {
         const posMap = {};
         currentNodes.forEach(n => {
-          if (n.data?.dataset?.name) {
-            posMap[n.data.dataset.name] = n.position;
-          }
+          const key = getNodePositionKey(n);
+          if (key) posMap[key] = n.position;
         });
 
         if (currentNodes.length === 0) {
@@ -477,9 +534,9 @@ const DiagramViewInner = () => {
         }
 
         const result = datasetNodes.map(dn => {
-          const name = dn.data?.dataset?.name;
-          if (name && posMap[name]) {
-            return { ...dn, position: posMap[name] };
+          const key = getNodePositionKey(dn);
+          if (key && posMap[key]) {
+            return { ...dn, position: posMap[key] };
           }
           // New node: place to the right of existing nodes
           let maxRight = -Infinity;
@@ -500,15 +557,20 @@ const DiagramViewInner = () => {
       });
     };
 
+    let cancelled = false;
     if (needsLayout) {
       getLayoutedElements(datasets, relationships).then(layouted => {
-        applyNodes(buildNodes(layouted));
+        if (!cancelled) applyNodes(buildNodes(layouted));
       });
     } else {
       applyNodes(buildNodes(null));
     }
     setEdges(fieldEdges);
-  }, [parsedData, modelName, handleAddField, handleDeleteField, handleReorderField, handleUpdateDataset, handleDeleteDataset, handleShowFieldDetails, selectedField, updateModel, setNodes, setEdges]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [modelName, handleAddField, handleDeleteField, handleReorderField, handleUpdateDataset, handleDeleteDataset, handleShowFieldDetails, handleOpenMetric, selectedField, updateModel, setNodes, setEdges, datasets, relationships, hasDatasets, metricEntries]);
 
   // Fit view after initial layout
   useEffect(() => {
@@ -565,6 +627,12 @@ const DiagramViewInner = () => {
   // Derive field data from current datasets (not stale snapshot)
   const selectedFieldData = selectedField
     ? datasets[selectedField.datasetIndex]?.fields?.[selectedField.fieldIndex]
+    : null;
+  const selectedMetricData = selectedMetricIndex != null
+    ? metrics[selectedMetricIndex]
+    : null;
+  const selectedMetricPath = selectedMetricIndex != null
+    ? `semantic_model[0].metrics[${selectedMetricIndex}]`
     : null;
 
   if (!parsedData) {
@@ -652,6 +720,7 @@ const DiagramViewInner = () => {
                 <li>Drag from left handle to right handle to link fields</li>
                 <li>Drag nodes to reposition</li>
                 <li>Drag fields to reorder within a dataset</li>
+                <li>Click a metric to edit it in the details drawer</li>
                 <li>Use mouse wheel to zoom</li>
               </ul>
             </div>
@@ -659,7 +728,7 @@ const DiagramViewInner = () => {
         )}
 
         {/* Empty State - No Datasets */}
-        {datasets.length === 0 && (
+        {!hasDatasets && metricEntries.length === 0 && (
           <Panel position="center" className="pointer-events-auto">
             <div className="bg-white rounded-lg shadow-lg p-8 text-center">
               <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -695,6 +764,20 @@ const DiagramViewInner = () => {
             handleDeleteField(`dataset-${selectedField.datasetIndex}`, selectedField.fieldIndex);
             setSelectedField(null);
           }
+        }}
+      />
+
+      <MetricDetailsDrawer
+        metric={selectedMetricData}
+        metricPath={selectedMetricPath}
+        setValue={setValue}
+        open={selectedMetricIndex !== null}
+        onClose={handleCloseDrawer}
+        onDelete={() => {
+          if (selectedMetricIndex === null) return;
+          const updated = metrics.filter((_, index) => index !== selectedMetricIndex);
+          setValue('semantic_model[0].metrics', updated.some(Boolean) ? updated : undefined);
+          setSelectedMetricIndex(null);
         }}
       />
     </div>

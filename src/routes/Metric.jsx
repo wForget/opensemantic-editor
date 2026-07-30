@@ -1,10 +1,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useEditorStore } from '../store.js';
 import { useShallow } from "zustand/react/shallow";
-import ValidatedInput from '../components/ui/ValidatedInput.jsx';
-import ValidatedTextarea from '../components/ui/ValidatedTextarea.jsx';
-import ExpressionEditor from '../components/ui/ExpressionEditor.jsx';
-import AIContextEditor from '../components/ui/AIContextEditor.jsx';
+import MetricEditorFields from '../components/ui/MetricEditorFields.jsx';
 
 const Metric = () => {
     const { metricId } = useParams();
@@ -29,7 +26,7 @@ const Metric = () => {
     const handleRemove = () => {
         const allMetrics = useEditorStore.getState().getValue('semantic_model[0].metrics') || [];
         const updated = allMetrics.filter((_, i) => i !== index);
-        setValue('semantic_model[0].metrics', updated.length > 0 ? updated : undefined);
+        setValue('semantic_model[0].metrics', updated.some(Boolean) ? updated : undefined);
         navigate('/metrics');
     };
 
@@ -48,30 +45,10 @@ const Metric = () => {
                         </h3>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-                        <ValidatedInput
-                            name="metric-name" label="Name" value={metric.name || ''}
-                            onChange={(e) => setValue(`${basePath}.name`, e.target.value)}
-                            required={true} placeholder="metric_name"
-                        />
-                        <div className="sm:col-span-2">
-                            <ValidatedTextarea
-                                name="metric-desc" label="Description" value={metric.description || ''}
-                                onChange={(e) => setValue(`${basePath}.description`, e.target.value || undefined)}
-                                placeholder="Describe the metric..." rows={2}
-                            />
-                        </div>
-                        <div className="sm:col-span-2">
-                            <ExpressionEditor
-                                label="Expression" value={metric.expression}
-                                onChange={(val) => setValue(`${basePath}.expression`, val)}
-                            />
-                        </div>
-                    </div>
-
-                    <AIContextEditor
-                        label="AI Context" value={metric.ai_context || {}}
-                        onChange={(val) => setValue(`${basePath}.ai_context`, val)}
+                    <MetricEditorFields
+                        metric={metric}
+                        metricPath={basePath}
+                        setValue={setValue}
                     />
 
                     <div className="pt-4 border-t border-gray-200">

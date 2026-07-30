@@ -148,11 +148,21 @@ test.describe('Open Semantic Editor - TPC-DS Example', () => {
         // Wait for ReactFlow to render
         await expect(page.locator('.react-flow')).toBeVisible({ timeout: 10000 });
 
-        // Check that dataset nodes are rendered (5 datasets = 5 nodes)
-        await expect(page.locator('.react-flow__node')).toHaveCount(5, { timeout: 10000 });
+        // Check that dataset and metrics nodes are rendered (5 datasets + 1 metrics node)
+        await expect(page.locator('.react-flow__node')).toHaveCount(6, { timeout: 10000 });
+        await expect(page.getByTestId('metrics-node')).toBeVisible();
+        await expect(page.getByTestId('metrics-node')).toContainText('Metrics');
+        await expect(page.getByTestId('metrics-node')).toContainText('total_sales');
+        await expect(page.getByTestId('metrics-node')).toContainText('store_productivity');
 
         // Check that edges are rendered (4 relationships = 4 edges)
         await expect(page.locator('.react-flow__edge')).toHaveCount(4, { timeout: 10000 });
+
+        // Clicking a metric opens the same editor fields without leaving Diagram
+        await page.getByTestId('metric-row-0').click();
+        await expect(page).toHaveURL(/\/diagram$/);
+        await expect(page.getByText('Edit Metric: total_sales')).toBeVisible();
+        await expect(page.locator('input[name="drawer-metric-name"]')).toHaveValue('total_sales');
     });
 
     test('switches to Preview and verifies model content', async ({ page }) => {

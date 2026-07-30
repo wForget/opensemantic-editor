@@ -169,11 +169,11 @@ const SidebarNavigation = ({ isMobile = false }) => {
             path: `/relationships/${i}`,
             yamlProperty: 'relationships',
         })),
-        metrics: metrics?.filter(Boolean).map((m, i) => ({
+        metrics: metrics?.flatMap((m, i) => m ? [{
             name: m.name || `Metric ${i + 1}`,
             path: `/metrics/${i}`,
             yamlProperty: 'metrics',
-        })),
+        }] : []),
     }), [datasets, relationships, metrics]);
 
     const sidebarContent = useMemo(() => (

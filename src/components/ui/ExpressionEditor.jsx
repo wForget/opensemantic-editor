@@ -49,6 +49,7 @@ const ExpressionEditor = ({ value, onChange, label = "Expression" }) => {
         {dialects.map((expr, index) => (
           <div key={index} className="flex gap-2 items-start">
             <select
+              aria-label={`${label} dialect ${index + 1}`}
               value={expr.dialect || ''}
               onChange={(e) => handleDialectChange(index, 'dialect', e.target.value)}
               className="rounded-md border-0 py-1.5 pl-2 pr-8 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 text-xs leading-4 bg-white"
@@ -59,6 +60,7 @@ const ExpressionEditor = ({ value, onChange, label = "Expression" }) => {
               ))}
             </select>
             <textarea
+              aria-label={`${label} SQL expression ${index + 1}`}
               value={expr.expression || ''}
               onChange={(e) => {
                 handleDialectChange(index, 'expression', e.target.value);
@@ -79,7 +81,7 @@ const ExpressionEditor = ({ value, onChange, label = "Expression" }) => {
           </div>
         ))}
         <div className="flex gap-2">
-          <select value="" onChange={(e) => {
+          <select aria-label={`Add ${label} dialect`} value="" onChange={(e) => {
               const dialect = e.target.value.trim();
               if (!dialect) return;
               const existing = dialects.filter(d => d.expression?.trim());

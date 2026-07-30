@@ -6,6 +6,7 @@ const Metrics = () => {
     const navigate = useNavigate();
     const metrics = useEditorStore(useShallow((state) => state.getValue('semantic_model[0].metrics'))) || [];
     const setValue = useEditorStore((state) => state.setValue);
+    const metricEntries = metrics.flatMap((metric, index) => metric ? [{ metric, index }] : []);
 
     const handleAdd = () => {
         const updated = [...metrics, { name: `metric_${metrics.length + 1}`, expression: { dialects: [] }, description: '' }];
@@ -14,7 +15,7 @@ const Metrics = () => {
 
     const handleRemove = (index) => {
         const updated = metrics.filter((_, i) => i !== index);
-        setValue('semantic_model[0].metrics', updated.length > 0 ? updated : undefined);
+        setValue('semantic_model[0].metrics', updated.some(Boolean) ? updated : undefined);
     };
 
     return (
@@ -28,7 +29,7 @@ const Metrics = () => {
                     <button onClick={handleAdd} className="btn--primary">+ Add Metric</button>
                 </div>
 
-                {metrics.length === 0 ? (
+                {metricEntries.length === 0 ? (
                     <div className="text-center py-12">
                         <svg className="mx-auto h-12 w-12 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -38,7 +39,7 @@ const Metrics = () => {
                     </div>
                 ) : (
                     <div className="space-y-2">
-                        {metrics.map((metric, index) => (
+                        {metricEntries.map(({ metric, index }) => (
                             <div key={index}
                                 className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/50 transition-colors cursor-pointer"
                                 onClick={() => navigate(`/metrics/${index}`)}
