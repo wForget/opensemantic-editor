@@ -7,7 +7,7 @@ describe('YAML parsing', () => {
   it('should parse the TPC-DS example without errors', () => {
     const parsed = parseYaml(exampleYaml);
     expect(parsed).toBeDefined();
-    expect(parsed.version).toBe('0.1.1');
+    expect(parsed.version).toBe('0.2.0.dev0');
   });
 
   it('should roundtrip the example YAML', () => {
@@ -24,7 +24,7 @@ describe('getValueWithPath', () => {
   const parsed = parseYaml(exampleYaml);
 
   it('should get root-level version', () => {
-    expect(getValueWithPath(parsed, 'version')).toBe('0.1.1');
+    expect(getValueWithPath(parsed, 'version')).toBe('0.2.0.dev0');
   });
 
   it('should get model name via array index', () => {
@@ -78,7 +78,7 @@ describe('getValueWithPath', () => {
     const dim = getValueWithPath(parsed, 'semantic_model[0].datasets[0].fields[0].dimension');
     expect(dim.is_time).toBe(false);
 
-    const timeDim = getValueWithPath(parsed, 'semantic_model[0].datasets[1].fields[1].dimension');
+    const timeDim = getValueWithPath(parsed, 'semantic_model[0].datasets[1].fields[2].dimension');
     expect(timeDim.is_time).toBe(true);
   });
 
