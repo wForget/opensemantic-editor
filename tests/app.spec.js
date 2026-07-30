@@ -218,40 +218,102 @@ test.describe('Open Semantic Editor - TPC-DS Example', () => {
         await expect(fallbackEdge).toHaveClass(/selected/);
         await expect(page.getByRole('dialog', { name: 'Edit Relationship: store_sales_to_date' })).toBeVisible();
 
-        // Column pairs are added and removed atomically
+        // Multiple column pairs are added atomically
         await page.locator('select[name="drawer-relationship-new-pair-from"]').selectOption('c_customer_sk');
         await page.locator('select[name="drawer-relationship-new-pair-to"]').selectOption('d_date_sk');
         await page.getByRole('button', { name: 'Add Pair', exact: true }).click();
         await page.locator('select[name="drawer-relationship-new-pair-from"]').selectOption('c_customer_id');
         await page.locator('select[name="drawer-relationship-new-pair-to"]').selectOption('d_date');
         await page.getByRole('button', { name: 'Add Pair', exact: true }).click();
-        await page.getByRole('button', { name: 'Remove column pair 1' }).click();
-        await expect(page.locator('select[name="drawer-relationship-pair-0-from"]')).toHaveValue('c_customer_id');
-        await expect(page.locator('select[name="drawer-relationship-pair-0-to"]')).toHaveValue('d_date');
+        await expect(page.locator('select[name="drawer-relationship-pair-0-from"]')).toHaveValue('c_customer_sk');
+        await expect(page.locator('select[name="drawer-relationship-pair-0-to"]')).toHaveValue('d_date_sk');
+        await expect(page.locator('select[name="drawer-relationship-pair-1-from"]')).toHaveValue('c_customer_id');
+        await expect(page.locator('select[name="drawer-relationship-pair-1-to"]')).toHaveValue('d_date');
 
-        // Deleting the last pair edge preserves the dataset-level relationship
+        // Closing the drawer restores focus to the exact pair edge clicked with the pointer
         await page.getByRole('button', { name: 'Close relationship editor' }).click();
+        const secondPairEdge = page.getByRole('group', {
+            name: 'Edit relationship store_sales_to_date: c_customer_id to d_date',
+        });
+        await clickVisibleEdge(page, secondPairEdge);
+        await expect(page.getByRole('dialog', { name: 'Edit Relationship: store_sales_to_date' })).toBeVisible();
+        await page.getByRole('button', { name: 'Close relationship editor' }).click();
+        await expect(secondPairEdge).toBeFocused();
+
+        // Deleting one of several pair edges keeps the relationship and its other pair
+        const firstPairEdge = page.getByRole('group', {
+            name: 'Edit relationship store_sales_to_date: c_customer_sk to d_date_sk',
+        });
+        await firstPairEdge.focus();
+        await page.keyboard.press(' ');
+        await expect(firstPairEdge).toHaveClass(/selected/);
+        await page.getByRole('button', { name: 'Close relationship editor' }).click();
+        await expect(firstPairEdge).toBeFocused();
+        await page.keyboard.press('Delete');
+        await expect(firstPairEdge).toHaveCount(0);
+        await expect(page.locator('.react-flow__edge')).toHaveCount(4);
+
+        // Deleting the final pair edge removes the complete relationship
         const remainingPairEdge = page.getByRole('group', {
             name: 'Edit relationship store_sales_to_date: c_customer_id to d_date',
         });
-        await expect(remainingPairEdge).toBeFocused();
+        await remainingPairEdge.focus();
         await page.keyboard.press(' ');
         await expect(remainingPairEdge).toHaveClass(/selected/);
         await page.getByRole('button', { name: 'Close relationship editor' }).click();
         await expect(remainingPairEdge).toBeFocused();
         await page.keyboard.press('Delete');
-        const emptyRelationshipEdge = page.getByRole('group', {
+        await expect(page.locator('.react-flow__edge')).toHaveCount(3);
+        await expect(page.getByRole('group', {
+            name: /Edit relationship store_sales_to_date:/,
+        })).toHaveCount(0);
+
+        // Relationship deletion made in Diagram is persisted to the shared form model
+        await page.getByRole('button', { name: 'Form' }).click();
+        await expect(page.getByRole('link', { name: 'store_sales_to_date', exact: true })).toHaveCount(0);
+        await page.getByRole('link', { name: 'Relationships' }).click();
+        await expect(page.locator('.space-y-2 > .border.border-gray-200.rounded-lg')).toHaveCount(3);
+    });
+
+    test('deletes a dataset-level relationship with Backspace and syncs YAML', async ({ page }) => {
+        await loadExample(page);
+
+        await page.getByRole('button', { name: /Preview/ }).click();
+        await page.getByRole('button', { name: 'Diagram' }).click();
+        await expect(page.locator('.react-flow__edge')).toHaveCount(4, { timeout: 10000 });
+
+        const relationshipEdge = page.getByRole('group', {
+            name: 'Edit relationship store_sales_to_date: ss_sold_date_sk to d_date_sk',
+        });
+        await clickVisibleEdge(page, relationshipEdge);
+
+        // Clearing the pairs creates a dataset-level fallback edge.
+        await page.locator('select[name="drawer-relationship-from"]').selectOption('customer');
+        await page.getByRole('button', { name: 'Close relationship editor' }).click();
+        const fallbackEdge = page.getByRole('group', {
             name: 'Edit relationship store_sales_to_date: customer to date_dim',
         });
-        await expect(emptyRelationshipEdge).toBeVisible();
-        await emptyRelationshipEdge.focus();
-        await page.keyboard.press('Enter');
+        await fallbackEdge.focus();
+        await page.keyboard.press(' ');
+        await expect(fallbackEdge).toHaveClass(/selected/);
+        await page.getByRole('button', { name: 'Close relationship editor' }).click();
+        await expect(fallbackEdge).toBeFocused();
 
-        // Relationship edits made in Diagram are persisted to the shared form model
-        await page.locator('input[name="drawer-relationship-name"]').fill('store_sales_to_date_diagram');
-        await expect(page.getByText('Edit Relationship: store_sales_to_date_diagram')).toBeVisible();
+        await page.keyboard.press('Backspace');
+        await expect(fallbackEdge).toHaveCount(0);
+        await expect(page.locator('.react-flow__edge')).toHaveCount(3);
+
+        const persistedYaml = await page.evaluate(() => {
+            const persistedState = JSON.parse(localStorage.getItem('osi-editor-store'));
+            return persistedState.state.yaml;
+        });
+        expect(persistedYaml).not.toContain('store_sales_to_date');
+        expect(persistedYaml).toContain('store_sales_to_customer');
+
         await page.getByRole('button', { name: 'Form' }).click();
-        await expect(page.getByRole('link', { name: 'store_sales_to_date_diagram', exact: true })).toBeVisible();
+        await expect(page.getByRole('link', { name: 'store_sales_to_date', exact: true })).toHaveCount(0);
+        await page.getByRole('link', { name: 'Relationships' }).click();
+        await expect(page.locator('.space-y-2 > .border.border-gray-200.rounded-lg')).toHaveCount(3);
     });
 
     test('switches to Preview and verifies model content', async ({ page }) => {

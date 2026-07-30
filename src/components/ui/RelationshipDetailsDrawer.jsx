@@ -36,13 +36,16 @@ const RelationshipDetailsDrawer = ({
             clearTimeout(focusTimer);
             document.removeEventListener('keydown', handleKeyDown);
             setTimeout(() => {
+                if (previousFocusRef.current?.isConnected) {
+                    previousFocusRef.current.focus();
+                    return;
+                }
+
                 const currentRelationshipEdge = relationshipIndex !== null
                     ? document.querySelector(`[data-relationship-index="${relationshipIndex}"]`)
                     : null;
                 if (currentRelationshipEdge) {
                     currentRelationshipEdge.focus();
-                } else if (previousFocusRef.current?.isConnected) {
-                    previousFocusRef.current.focus();
                 }
             }, 0);
         };

@@ -24,6 +24,7 @@ import {
 import FieldDetailsDrawer from '../components/ui/FieldDetailsDrawer.jsx';
 import MetricDetailsDrawer from '../components/ui/MetricDetailsDrawer.jsx';
 import RelationshipDetailsDrawer from '../components/ui/RelationshipDetailsDrawer.jsx';
+import { deleteRelationshipEdges } from '../components/diagram/relationshipEdgeUtils.js';
 
 const defaultEdgeOptions = {
   style: { strokeWidth: 2, stroke: '#b1b1b7' },
@@ -353,39 +354,14 @@ const DiagramViewInner = () => {
     }
   }, [datasets, relationships, updateModel]);
 
-  // Handle edge deletion — removes column pair from relationship
+  // Handle edge deletion — removes the corresponding column pair. Removing the
+  // final pair (or a dataset-level fallback edge) removes the relationship too.
   const onEdgesDelete = useCallback((edgesToDelete) => {
-    const deletionsByRelationship = new Map();
-    edgesToDelete.forEach(edge => {
-      const relationshipIndex = edge.data?.relationshipIndex;
-      if (!Number.isInteger(relationshipIndex)) return;
-      const pairIndexes = deletionsByRelationship.get(relationshipIndex) || new Set();
-      pairIndexes.add(Number.isInteger(edge.data?.columnPairIndex) ? edge.data.columnPairIndex : null);
-      deletionsByRelationship.set(relationshipIndex, pairIndexes);
-    });
+    const result = deleteRelationshipEdges(relationships, edgesToDelete);
+    if (!result.changed) return;
 
-    if (deletionsByRelationship.size > 0) {
-      const updatedRelationships = relationships.flatMap((relationship, relationshipIndex) => {
-        const pairIndexes = deletionsByRelationship.get(relationshipIndex);
-        if (!pairIndexes) return [relationship];
-        if (pairIndexes.has(null)) return [];
-
-        const fromColumns = [...(relationship.from_columns || [])];
-        const toColumns = [...(relationship.to_columns || [])];
-        [...pairIndexes].sort((a, b) => b - a).forEach(pairIndex => {
-          fromColumns.splice(pairIndex, 1);
-          toColumns.splice(pairIndex, 1);
-        });
-
-        return [{
-          ...relationship,
-          from_columns: fromColumns.length ? fromColumns : undefined,
-          to_columns: toColumns.length ? toColumns : undefined,
-        }];
-      });
-      updateModel({ relationships: updatedRelationships });
-      setSelectedRelationshipIndex(null);
-    }
+    updateModel({ relationships: result.relationships });
+    setSelectedRelationshipIndex(null);
   }, [relationships, updateModel]);
 
   // Convert datasets, metrics, and relationships to nodes and edges
@@ -465,6 +441,7 @@ const DiagramViewInner = () => {
     // Build edges from relationships (field-to-field)
     const fieldEdges = [];
     relationships.forEach((rel, relationshipIndex) => {
+      if (!rel) return;
       const sourceDatasetIndex = datasets.findIndex(d => d?.name === rel.from);
       const targetDatasetIndex = datasets.findIndex(d => d?.name === rel.to);
 
@@ -518,6 +495,7 @@ const DiagramViewInner = () => {
           target: `dataset-${targetDatasetIndex}`,
           type: 'default',
           selectable: true,
+          deletable: true,
           focusable: true,
           interactionWidth: 20,
           style: { stroke: '#b1b1b7', strokeWidth: 2 },
@@ -675,7 +653,10 @@ const DiagramViewInner = () => {
         onNodesChange={handleNodesChange}
         onEdgesChange={onEdgesChange}
         onEdgesDelete={onEdgesDelete}
-        onEdgeClick={(_event, edge) => handleOpenRelationship(edge.data?.relationshipIndex)}
+        onEdgeClick={(event, edge) => {
+          event.target.closest?.('.react-flow__edge')?.focus();
+          handleOpenRelationship(edge.data?.relationshipIndex);
+        }}
         onKeyDownCapture={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return;
           const edgeElement = event.target.closest?.('.react-flow__edge');
@@ -712,7 +693,7 @@ const DiagramViewInner = () => {
         multiSelectionKeyCode={null}
         elementsSelectable={true}
         ariaLabelConfig={{
-          'edge.a11yDescription.default': 'Press Enter or Space to select and edit this relationship. Press Delete or Backspace to remove the selected relationship or column pair.',
+          'edge.a11yDescription.default': 'Press Enter or Space to select and edit this relationship. Press Delete or Backspace to remove this column pair, or the relationship when no column pair remains.',
         }}
       >
         <Background />
@@ -757,6 +738,7 @@ const DiagramViewInner = () => {
                 <li>Drag fields to reorder within a dataset</li>
                 <li>Click a metric to edit it in the details drawer</li>
                 <li>Click a relationship line to edit it in the details drawer</li>
+                <li>Select a relationship line and press Delete or Backspace to remove its column pair; removing the final pair deletes the relationship</li>
                 <li>Use mouse wheel to zoom</li>
               </ul>
             </div>

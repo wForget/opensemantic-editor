@@ -111,6 +111,7 @@ export const getLayoutedElements = async (datasets, relationships = []) => {
   // Build ELK edges from relationships
   const elkEdges = [];
   relationships.forEach((rel) => {
+    if (!rel) return;
     const sourceIndex = datasets.findIndex(d => d?.name === rel.from);
     const targetIndex = datasets.findIndex(d => d?.name === rel.to);
     if (sourceIndex === -1 || targetIndex === -1) return;
