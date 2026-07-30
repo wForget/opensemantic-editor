@@ -3,6 +3,7 @@ import ValidatedInput from './ValidatedInput.jsx';
 import ValidatedTextarea from './ValidatedTextarea.jsx';
 import ExpressionEditor from './ExpressionEditor.jsx';
 import AIContextEditor from './AIContextEditor.jsx';
+import { DATA_TYPE_OPTIONS } from '../../config/datatypes.js';
 
 const MIN_WIDTH = 280;
 const MAX_WIDTH_PERCENT = 0.8;
@@ -124,6 +125,24 @@ const FieldDetailsDrawer = forwardRef(({ field, fieldPath, setValue, open, onClo
                         onChange={(e) => setValue(`${fieldPath}.label`, e.target.value || undefined)}
                         placeholder="Display label"
                     />
+                    <div>
+                        <label htmlFor="drawer-field-datatype" className="block text-xs font-medium leading-4 text-gray-900">
+                            Datatype
+                        </label>
+                        <select
+                            id="drawer-field-datatype"
+                            name="drawer-field-datatype"
+                            value={field.datatype || ''}
+                            onChange={(e) => setValue(`${fieldPath}.datatype`, e.target.value || undefined)}
+                            title="The field's logical data type"
+                            className="mt-1 block w-full rounded-md border-0 bg-white py-1.5 pl-2 pr-8 text-xs leading-4 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600"
+                        >
+                            <option value="">Not specified</option>
+                            {DATA_TYPE_OPTIONS.map((datatype) => (
+                                <option key={datatype} value={datatype}>{datatype}</option>
+                            ))}
+                        </select>
+                    </div>
                     <ValidatedTextarea
                         name="drawer-field-desc"
                         label="Description"

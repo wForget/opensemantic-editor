@@ -135,6 +135,16 @@ const FieldRow = ({ field, fieldIndex, isSelected, onSelect, primaryKey = [], se
                         </span>
                     )}
 
+                    {/* Datatype preview */}
+                    {field.datatype && (
+                        <span
+                            className="max-w-28 truncate rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] font-medium text-slate-600 flex-shrink-0"
+                            title={`Datatype: ${field.datatype}`}
+                        >
+                            {field.datatype}
+                        </span>
+                    )}
+
                     {/* Expression preview - like type selector in DC editor */}
                     {firstDialect?.expression && (
                         <span className="text-xs text-gray-400 font-mono flex-shrink-0 min-w-20" title={`${firstDialect.dialect || 'SQL'}: ${firstDialect.expression}`}>

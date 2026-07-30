@@ -95,6 +95,7 @@ const SemanticModelPreview = () => {
                                                 <thead>
                                                     <tr className="border-b border-gray-100">
                                                         <th className="text-left py-1 font-medium text-gray-600">Field</th>
+                                                        <th className="text-left py-1 pr-4 font-medium text-gray-600">Datatype</th>
                                                         <th className="text-left py-1 font-medium text-gray-600">Description</th>
                                                         <th className="text-left py-1 font-medium text-gray-600">Expression</th>
                                                     </tr>
@@ -108,6 +109,9 @@ const SemanticModelPreview = () => {
                                                                 ) : (
                                                                     <span className="font-mono">{field.name}</span>
                                                                 )}
+                                                            </td>
+                                                            <td className="py-1 pr-4 text-gray-600 font-mono">
+                                                                {field.datatype || '-'}
                                                             </td>
                                                             <td className="py-1 text-gray-600">{field.description || '-'}</td>
                                                             <td className="py-1 text-gray-500 font-mono">
